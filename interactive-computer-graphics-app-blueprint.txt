@@ -1,0 +1,661 @@
+====================================================================
+DESIGN & IMPLEMENTATION OF AN INTERACTIVE COMPUTER GRAPHICS LEARNING
+APPLICATION FOR SECONDARY SCHOOL STUDENTS
+FULL BUILD BLUEPRINT — STACK: React.js + Node.js/Express + MongoDB (MERN)
+====================================================================
+
+HOW TO USE THIS FILE
+--------------------
+This is a complete implementation spec you can hand to yourself, a
+teammate, or an AI coding assistant (e.g. Claude Code) one section at
+a time. Sections are ordered in the sequence you should actually build
+them in. Each feature block lists: purpose, user roles involved, UI
+screens, API endpoints, data model fields, and edge cases/scenarios
+to handle. Nothing here is optional if you want the project to hold
+up under defense/viva questioning — examiners for this exact project
+title will ask about roles, progress tracking, and how quizzes are
+scored, so those are covered in depth.
+
+====================================================================
+1. PROJECT OVERVIEW
+====================================================================
+Name: Interactive Computer Graphics Learning Application (ICGLA)
+Goal: Web app that teaches secondary school Computer Graphics topics
+(e.g. lines/shapes, color theory, raster vs vector, image editing
+basics, CAD/paint tool basics, animation principles, graphics file
+formats, transformation of graphics/2D transformations) through:
+  - Structured lesson modules (text + images + video/embedded media)
+  - Illustrated/interactive tutorials (step-by-step, some with
+    canvas-based mini interactions, e.g. "drag this shape", "pick
+    the correct color code")
+  - Quizzes/assessments with auto-grading
+  - Progress tracking per student
+  - Teacher tools to create/manage content and monitor students
+  - Admin tools to manage users, classes, and system settings
+  - Feedback/comments mechanism
+
+Three user roles:
+  1. Admin      - manages the whole system
+  2. Teacher    - creates/manages lessons, quizzes, monitors students
+  3. Student    - consumes lessons, takes quizzes, tracks own progress
+
+====================================================================
+2. TECH STACK
+====================================================================
+Frontend:
+  - React.js (Vite for build tooling — faster than CRA)
+  - React Router v6 for routing
+  - Redux Toolkit OR React Context + useReducer for global state
+    (auth user, progress cache) — Redux Toolkit recommended for a
+    project of this size (multiple roles, shared state)
+  - Axios for HTTP requests (with interceptor for JWT)
+  - TailwindCSS for styling (fast, consistent, good for a solo/school
+    project — avoids hand-rolling CSS)
+  - Chart.js or Recharts for progress dashboards/analytics
+  - React-Toastify for notifications
+  - Formik + Yup for forms and validation
+  - HTML5 Canvas API (native, wrapped in a React component) for the
+    interactive graphics tutorials (drawing shapes, transformations,
+    color mixing demos) — this is the feature that makes it
+    "computer graphics" specific, don't skip it
+
+Backend:
+  - Node.js + Express.js
+  - JWT (jsonwebtoken) for authentication
+  - bcrypt.js for password hashing
+  - express-validator for input validation
+  - multer for file uploads (lesson images, video files, avatars)
+  - nodemailer for email (password reset, welcome emails, notifications)
+  - cookie-parser + cors configured for credentials
+  - helmet + express-rate-limit for basic security hardening
+  - morgan for request logging (dev)
+
+Database:
+  - MongoDB (Atlas cloud cluster for deployment, local MongoDB for dev)
+  - Mongoose ODM for schema modeling
+
+File/Media storage:
+  - Local /uploads folder for development
+  - Cloudinary (recommended, free tier) or AWS S3 for production image/
+    video storage — store the URL in MongoDB, not the binary
+
+Deployment (suggested):
+  - Frontend: Vercel or Netlify
+  - Backend: Render or Railway (free tiers exist)
+  - Database: MongoDB Atlas (free tier, M0 cluster)
+  - Version control: Git + GitHub
+
+====================================================================
+3. HIGH-LEVEL ARCHITECTURE
+====================================================================
+[React SPA] <--REST/JSON via Axios--> [Express API] <--Mongoose--> [MongoDB]
+      |                                     |
+      |                              [Cloudinary/S3 for media]
+      |
+[JWT stored in httpOnly cookie or localStorage]
+
+Folder structure (monorepo, two top-level folders):
+
+icgla/
+├── client/                     (React app)
+│   ├── src/
+│   │   ├── api/                (axios instance + per-resource api calls)
+│   │   ├── components/
+│   │   │   ├── common/         (Navbar, Sidebar, Loader, Modal, ProtectedRoute)
+│   │   │   ├── student/
+│   │   │   ├── teacher/
+│   │   │   ├── admin/
+│   │   │   └── canvas/         (interactive graphics tutorial components)
+│   │   ├── pages/
+│   │   │   ├── auth/           (Login, Register, ForgotPassword, ResetPassword)
+│   │   │   ├── student/        (Dashboard, LessonView, QuizView, Progress)
+│   │   │   ├── teacher/        (Dashboard, LessonEditor, QuizEditor, ClassRoster, StudentProgress)
+│   │   │   └── admin/          (Dashboard, UserManagement, ClassManagement, Reports)
+│   │   ├── store/              (Redux slices: authSlice, lessonSlice, quizSlice, progressSlice)
+│   │   ├── hooks/
+│   │   ├── utils/
+│   │   ├── App.jsx
+│   │   └── main.jsx
+│   └── package.json
+│
+├── server/                     (Node/Express app)
+│   ├── config/                 (db.js, cloudinary.js)
+│   ├── controllers/            (authController.js, lessonController.js, quizController.js,
+│   │                            userController.js, progressController.js, feedbackController.js,
+│   │                            classController.js)
+│   ├── middleware/             (authMiddleware.js, roleMiddleware.js, errorMiddleware.js,
+│   │                            uploadMiddleware.js, validateMiddleware.js)
+│   ├── models/                 (User.js, Lesson.js, Module.js, Quiz.js, Question.js,
+│   │                            Attempt.js, Progress.js, Class.js, Feedback.js, Notification.js)
+│   ├── routes/                 (authRoutes.js, lessonRoutes.js, quizRoutes.js, userRoutes.js,
+│   │                            progressRoutes.js, feedbackRoutes.js, classRoutes.js)
+│   ├── utils/                  (generateToken.js, sendEmail.js, apiError.js, apiResponse.js)
+│   ├── uploads/                (dev-only local storage)
+│   ├── server.js
+│   └── package.json
+│
+└── README.md
+
+====================================================================
+4. USER ROLES & PERMISSIONS MATRIX
+====================================================================
+Feature                        | Admin | Teacher | Student
+--------------------------------|-------|---------|--------
+Register/Login                  | Y     | Y       | Y (self-register or admin-created)
+Manage all users (CRUD)         | Y     | N       | N
+Approve teacher accounts        | Y     | N       | N
+Create/manage classes           | Y     | Y (own) | N
+Create/edit/delete lessons      | N     | Y (own) | N
+View lessons                    | Y     | Y       | Y (enrolled only)
+Create/edit/delete quizzes      | N     | Y (own) | N
+Take quizzes                    | N     | N       | Y
+Auto-grade quiz attempts        | system| system  | system
+View own progress               | -     | -       | Y
+View students' progress         | Y (all)| Y (own class)| N (self only)
+Interactive canvas tutorials    | N     | N (preview)| Y
+Submit feedback/comments        | N     | Y       | Y
+Respond to feedback             | Y     | Y       | N
+System settings/reports         | Y     | N       | N
+Notifications                   | Y     | Y       | Y
+
+====================================================================
+5. DATA MODELS (MongoDB / Mongoose Schemas)
+====================================================================
+
+--- 5.1 User ---
+{
+  _id: ObjectId,
+  fullName: String, required,
+  email: String, required, unique, lowercase,
+  password: String, required (hashed with bcrypt, select:false),
+  role: enum ['admin','teacher','student'], default 'student',
+  avatarUrl: String,
+  school: String,
+  className: String,              // e.g. "SS2A" — for students
+  isApproved: Boolean, default: false,   // teachers require admin approval
+  isActive: Boolean, default: true,
+  emailVerified: Boolean, default: false,
+  emailVerifyToken: String,
+  resetPasswordToken: String,
+  resetPasswordExpires: Date,
+  lastLogin: Date,
+  createdAt, updatedAt (timestamps: true)
+}
+
+--- 5.2 Class ---
+{
+  _id: ObjectId,
+  name: String,                    // "SS2 Computer Graphics"
+  teacher: ObjectId -> User,
+  students: [ObjectId -> User],
+  classCode: String, unique,       // students join via code
+  createdAt, updatedAt
+}
+
+--- 5.3 Module (a topic grouping, e.g. "Introduction to Computer Graphics") ---
+{
+  _id: ObjectId,
+  title: String,
+  description: String,
+  order: Number,                   // sequencing on the syllabus
+  coverImageUrl: String,
+  createdBy: ObjectId -> User (teacher/admin),
+  isPublished: Boolean, default: false,
+  createdAt, updatedAt
+}
+
+--- 5.4 Lesson (belongs to a Module) ---
+{
+  _id: ObjectId,
+  module: ObjectId -> Module,
+  title: String,
+  content: String,                 // rich text/HTML from editor
+  mediaAssets: [{ type: enum['image','video','diagram'], url: String, caption: String }],
+  interactiveType: enum ['none','canvas-shapes','canvas-color','canvas-transform'],
+  interactiveConfig: Object,       // parameters passed to the canvas component
+  order: Number,
+  estimatedMinutes: Number,
+  isPublished: Boolean, default: false,
+  createdBy: ObjectId -> User,
+  createdAt, updatedAt
+}
+
+--- 5.5 Quiz ---
+{
+  _id: ObjectId,
+  module: ObjectId -> Module,
+  lesson: ObjectId -> Lesson (optional, can be module-level quiz),
+  title: String,
+  description: String,
+  timeLimitMinutes: Number,
+  passMarkPercent: Number, default: 50,
+  maxAttempts: Number, default: 3,
+  shuffleQuestions: Boolean, default: true,
+  isPublished: Boolean, default: false,
+  createdBy: ObjectId -> User,
+  createdAt, updatedAt
+}
+
+--- 5.6 Question (belongs to Quiz) ---
+{
+  _id: ObjectId,
+  quiz: ObjectId -> Quiz,
+  questionText: String,
+  imageUrl: String (optional, for image-based questions),
+  type: enum ['single-choice','multiple-choice','true-false'],
+  options: [{ text: String, isCorrect: Boolean }],
+  explanation: String,             // shown after answer submitted
+  points: Number, default: 1,
+  order: Number
+}
+
+--- 5.7 Attempt (a student's quiz attempt) ---
+{
+  _id: ObjectId,
+  student: ObjectId -> User,
+  quiz: ObjectId -> Quiz,
+  answers: [{ question: ObjectId, selectedOptions: [String] }],
+  score: Number,
+  totalPoints: Number,
+  percentage: Number,
+  passed: Boolean,
+  startedAt: Date,
+  submittedAt: Date,
+  durationSeconds: Number,
+  attemptNumber: Number
+}
+
+--- 5.8 Progress (tracks lesson completion per student) ---
+{
+  _id: ObjectId,
+  student: ObjectId -> User,
+  module: ObjectId -> Module,
+  lesson: ObjectId -> Lesson,
+  status: enum ['not-started','in-progress','completed'],
+  timeSpentSeconds: Number,
+  lastAccessedAt: Date,
+  completedAt: Date
+}
+// Unique compound index on (student, lesson) to prevent duplicates
+
+--- 5.9 Feedback ---
+{
+  _id: ObjectId,
+  fromUser: ObjectId -> User,
+  targetType: enum ['lesson','quiz','general'],
+  targetId: ObjectId (optional),
+  message: String,
+  rating: Number (1-5, optional),
+  response: String,               // admin/teacher reply
+  respondedBy: ObjectId -> User,
+  status: enum ['open','resolved'], default: 'open',
+  createdAt, updatedAt
+}
+
+--- 5.10 Notification ---
+{
+  _id: ObjectId,
+  user: ObjectId -> User,
+  message: String,
+  type: enum ['new-lesson','quiz-graded','feedback-response','class-announcement'],
+  link: String,
+  isRead: Boolean, default: false,
+  createdAt
+}
+
+====================================================================
+6. AUTHENTICATION & AUTHORIZATION FLOW
+====================================================================
+Registration:
+  - Student self-registers with class code (joins a Class automatically)
+    OR is added by a teacher/admin.
+  - Teacher self-registers but isApproved=false until Admin approves.
+  - Admin accounts are seeded manually (not self-registrable) via a
+    seed script — prevents anyone from creating an admin account.
+
+Login:
+  - POST /api/auth/login -> validate email/password -> bcrypt.compare
+  - On success: sign JWT (payload: { id, role }), set as httpOnly
+    cookie AND/OR return in JSON body for the client to store.
+  - Include user role in response so React can route to correct
+    dashboard immediately.
+
+Middleware:
+  - protect: verifies JWT, attaches req.user
+  - authorize(...roles): checks req.user.role is in allowed list
+  - Example: router.post('/lessons', protect, authorize('teacher','admin'), createLesson)
+
+Password reset:
+  - POST /api/auth/forgot-password -> generate reset token, email link
+  - POST /api/auth/reset-password/:token -> verify token+expiry, update password
+
+Edge cases to handle:
+  - Duplicate email registration -> 409 Conflict with clear message
+  - Unapproved teacher tries to log in -> allow login but show
+    "pending approval" banner, block content-creation actions
+  - Expired/invalid JWT -> 401, force re-login on frontend (Axios
+    interceptor catches 401 globally and redirects to /login)
+  - Invalid class code on student signup -> 400 with message
+  - Account deactivated (isActive:false) -> block login with 403
+  - Rate-limit login endpoint (e.g. 5 attempts / 15 min) to deter
+    brute force
+
+====================================================================
+7. FEATURE-BY-FEATURE SPEC (with API endpoints)
+====================================================================
+
+--- 7.1 Admin: User Management ---
+Screens: UserList (table, filter by role/status), UserDetail, EditUser
+Endpoints:
+  GET    /api/admin/users                (filter, paginate, search)
+  GET    /api/admin/users/:id
+  PUT    /api/admin/users/:id             (edit role, active status)
+  DELETE /api/admin/users/:id
+  PUT    /api/admin/users/:id/approve     (approve pending teacher)
+  GET    /api/admin/reports/overview      (total users, active students,
+                                            lessons published, avg quiz score)
+Edge cases:
+  - Prevent admin from deleting their own account
+  - Cascade: deleting a teacher should reassign or archive their
+    classes/lessons rather than silently orphan them (soft-delete
+    recommended: isActive=false instead of hard delete)
+
+--- 7.2 Teacher: Class Management ---
+Screens: MyClasses, ClassDetail (roster + class code), CreateClass
+Endpoints:
+  POST   /api/classes                     (create, auto-generate classCode)
+  GET    /api/classes/mine
+  GET    /api/classes/:id/students
+  DELETE /api/classes/:id/students/:studentId   (remove student)
+  POST   /api/classes/join                (student uses classCode)
+Edge cases:
+  - Class code collision -> regenerate until unique
+  - Student tries to join a class they're already in -> 409, friendly message
+  - Teacher tries to view a class that isn't theirs -> 403
+
+--- 7.3 Teacher/Admin: Lesson & Module Management (CMS) ---
+Screens: ModuleList, ModuleEditor, LessonEditor (rich text editor —
+use something like React-Quill or TipTap), MediaUploader,
+InteractiveConfigBuilder (for canvas-based tutorials — teacher picks
+"canvas-shapes" and sets which shapes/colors are involved)
+Endpoints:
+  POST   /api/modules
+  GET    /api/modules                     (published only for students;
+                                            all for teacher/admin)
+  PUT    /api/modules/:id
+  DELETE /api/modules/:id
+  POST   /api/modules/:id/lessons
+  GET    /api/lessons/:id
+  PUT    /api/lessons/:id
+  DELETE /api/lessons/:id
+  POST   /api/lessons/:id/media           (multer upload -> Cloudinary
+                                            -> save URL in mediaAssets)
+Edge cases:
+  - Unpublished lessons must be invisible to students, even via
+    direct URL/ID (check isPublished in the query AND re-check on
+    the GET /lessons/:id single endpoint, not just the list endpoint)
+  - Reordering lessons (drag-and-drop) -> PATCH endpoint that accepts
+    an array of {id, order} pairs and bulk-updates
+  - Large image/video uploads -> enforce max file size (e.g. 10MB)
+    and allowed mime types in multer config; reject others with 400
+  - Deleting a Module that has Lessons + Quizzes with student Progress/
+    Attempts already recorded -> soft-delete (archive) instead of
+    hard delete to preserve student history/grades
+
+--- 7.4 Student: Lesson Consumption ---
+Screens: ModuleList (syllabus view), LessonView (content + media +
+embedded interactive canvas + "Mark as complete" + Next/Previous nav)
+Endpoints:
+  GET  /api/modules                       (only published, only for
+                                            student's enrolled class)
+  GET  /api/lessons/:id
+  POST /api/progress/lesson/:id/start     (creates/updates Progress ->
+                                            in-progress, sets lastAccessedAt)
+  POST /api/progress/lesson/:id/complete  (sets status=completed,
+                                            completedAt=now, triggers
+                                            check: is entire module done?)
+Edge cases:
+  - Student tries to access a lesson from a module not assigned to
+    their class -> 403
+  - Re-visiting a completed lesson -> don't downgrade status, but do
+    update lastAccessedAt and accumulate timeSpentSeconds
+  - Track time spent honestly: start a client-side timer on mount,
+    send elapsed seconds on unmount/navigation (use navigator.
+    sendBeacon or a debounced interval POST so data isn't lost if the
+    tab closes abruptly)
+  - Sequential unlocking (optional but recommended for "practical
+    demonstrations" flow): Lesson N+1 locked until Lesson N is
+    completed — configurable per module (isSequential: Boolean)
+
+--- 7.5 Interactive Canvas Tutorials (the "computer graphics" core) ---
+This is what differentiates this from a generic e-learning app —
+build these as reusable React components using the HTML5 Canvas API
+(or SVG for simpler ones), NOT static images:
+
+  a) ShapeDrawingDemo — student uses on-screen tools to draw
+     line/rectangle/circle/polygon; teaches primitives. Validate
+     against an expected shape/tolerance for a "practice" quiz mode.
+  b) ColorMixerDemo — RGB/HEX sliders update a live color swatch;
+     teaches additive color model. Quiz variant: "Which RGB values
+     make this color?"
+  c) TransformationDemo — student drags sliders for
+     translate/rotate/scale on a shape, sees the matrix/coordinates
+     update live; teaches 2D transformations.
+  d) RasterVsVectorDemo — zoom slider shows a raster image pixelating
+     vs a vector shape staying crisp; teaches the raster/vector
+     distinction visually.
+  e) LayeringDemo — drag-and-drop layer reordering with opacity
+     sliders; teaches layers/compositing (as used in image editors).
+
+Implementation note: each demo is a self-contained React component
+receiving an interactiveConfig prop (from the Lesson document) so
+teachers can reuse the same component with different parameters
+(e.g. different starting shapes/colors) without new code.
+
+Edge cases:
+  - Canvas must be responsive (recalculate coordinate system on
+    window resize / mobile viewport — computer graphics topic on a
+    phone screen still needs to work)
+  - Touch support for tablets (many secondary schools use tablets)
+  - Undo/reset button on every interactive demo
+  - Graceful fallback message if browser doesn't support Canvas
+    (rare, but check and message it)
+
+--- 7.6 Quizzes & Assessments ---
+Screens: QuizIntro (rules, time limit, attempts remaining), QuizTaking
+(one question at a time or all-on-page, with timer), QuizResult
+(score, pass/fail, per-question review with explanations)
+Endpoints:
+  GET  /api/quizzes/:id                   (returns questions WITHOUT
+                                            isCorrect flags — never
+                                            leak answers to frontend
+                                            before submission)
+  POST /api/quizzes/:id/start             (creates Attempt, records
+                                            startedAt, checks
+                                            attemptNumber <= maxAttempts)
+  POST /api/quizzes/:id/submit            (server-side grading only —
+                                            compare submitted answers
+                                            against stored isCorrect
+                                            values, compute score,
+                                            NEVER trust a client-sent
+                                            score)
+  GET  /api/quizzes/:id/attempts/mine
+  GET  /api/quizzes/:id/attempts/:attemptId
+Edge cases:
+  - Timer expiry -> auto-submit whatever is answered when
+    timeLimitMinutes elapses (client countdown + server-side
+    validation: reject submit if submittedAt - startedAt exceeds
+    limit by more than a small grace buffer, e.g. 10s)
+  - maxAttempts reached -> block "start" with 403, show best/last score
+  - Student refreshes mid-quiz -> resume from the in-progress Attempt
+    rather than losing answers (persist answers on each option click,
+    not just on final submit — debounced autosave)
+  - Shuffled questions/options -> shuffle order is stored per-attempt
+    so review screen matches what the student actually saw
+  - Grading multiple-choice (more than one correct option) -> partial
+    credit rules must be explicit and documented (e.g. all-or-nothing
+    vs proportional) — pick one and state it in the quiz description
+  - Prevent duplicate submission (double-click submit button ->
+    disable button after first click; also idempotency check server-side)
+
+--- 7.7 Progress Tracking & Dashboards ---
+Student Dashboard: overall % of syllabus completed, per-module
+progress bars, recent quiz scores, streak/time spent this week,
+recommended next lesson.
+Teacher Dashboard: class-wide completion heatmap, average quiz scores
+per module, list of students falling behind (e.g. <30% progress after
+2 weeks), ability to drill into one student's full history.
+Admin Dashboard: system-wide stats (total active users, most-viewed
+modules, overall pass rates).
+Endpoints:
+  GET /api/progress/mine
+  GET /api/progress/student/:id            (teacher/admin only, must
+                                             own the class or be admin)
+  GET /api/progress/class/:classId/summary
+  GET /api/analytics/overview               (admin)
+Edge cases:
+  - Percentage calculations must handle 0 total lessons (avoid
+    divide-by-zero -> show "No content yet" instead of NaN%)
+  - A student who moves between classes -> decide whether historical
+    progress is preserved (recommended: yes, tie Progress to
+    student+lesson, not to class)
+
+--- 7.8 Feedback & Notifications ---
+Screens: FeedbackForm (on every lesson/quiz page, small widget),
+FeedbackInbox (teacher/admin), NotificationBell (dropdown, unread count)
+Endpoints:
+  POST /api/feedback
+  GET  /api/feedback                       (teacher/admin, filter by status)
+  PUT  /api/feedback/:id/respond
+  GET  /api/notifications/mine
+  PUT  /api/notifications/:id/read
+  PUT  /api/notifications/read-all
+Trigger notifications on:
+  - New lesson published in student's module
+  - Quiz graded (auto, immediate since grading is instant)
+  - Feedback responded to
+  - Teacher account approved (to the teacher)
+Edge cases:
+  - Don't notify a student about a lesson published in a module their
+    class isn't assigned to
+  - Cap notification list query (paginate, e.g. last 50) to avoid
+    unbounded growth on the dashboard
+
+====================================================================
+8. NON-FUNCTIONAL REQUIREMENTS (write-up material for your project
+   report — Chapter 4/5 typically expects these)
+====================================================================
+- Responsiveness: TailwindCSS breakpoints tested on mobile (375px),
+  tablet (768px), desktop (1280px+)
+- Performance: lazy-load route components with React.lazy/Suspense;
+  paginate all list endpoints server-side; compress/optimize images
+  before upload (client-side resize before sending to Cloudinary)
+- Security: bcrypt for passwords, JWT expiry (e.g. 7 days), helmet
+  headers, input validation on every POST/PUT (express-validator),
+  sanitize rich-text lesson content to prevent stored XSS (use a
+  library like sanitize-html on the server before saving)
+- Accessibility: semantic HTML, alt text fields required on
+  mediaAssets, keyboard-navigable quiz options
+- Availability: MongoDB Atlas free tier + Render/Railway free tier is
+  sufficient for a school demo/defense; document limitations (cold
+  starts on free tier) in your report
+- Data backup: mention MongoDB Atlas automated backups in your report
+  even if you don't configure paid backups, to show awareness
+
+====================================================================
+9. TESTING PLAN (for your project report's Chapter 4 - System Testing)
+====================================================================
+Unit tests (backend): Jest + Supertest for controllers (auth,
+grading logic especially — grading correctness is the single most
+scrutinized piece of logic in a project like this)
+Unit tests (frontend): React Testing Library for key components
+(LoginForm, QuizTaking, ProgressBar)
+Manual test scenarios to document in your report (write these as a
+test case table with Input / Expected Output / Actual Output /
+Pass-Fail):
+  1. Register as student with valid class code -> success
+  2. Register as student with invalid class code -> rejected
+  3. Teacher registers -> cannot create lesson until approved
+  4. Admin approves teacher -> teacher can now create lesson
+  5. Student attempts quiz beyond maxAttempts -> blocked
+  6. Quiz timer expires -> auto-submits
+  7. Student completes all lessons in a module -> module marked
+     100% on dashboard
+  8. Unauthorized role tries protected route (e.g. student hits
+     POST /api/lessons) -> 403
+  9. Upload image >10MB -> rejected with clear error
+  10. Password reset flow end-to-end
+  11. Concurrent: two students in same class both submit same quiz
+      simultaneously -> both graded independently and correctly
+
+====================================================================
+10. BUILD ORDER (do it in this sequence)
+====================================================================
+Phase 1 — Foundation
+  1. Init server/ (Express, connect MongoDB, health-check route)
+  2. Build User model + auth (register/login/JWT middleware)
+  3. Init client/ (Vite React, Tailwind, React Router, Axios instance)
+  4. Build Login/Register pages wired to auth API
+  5. Build ProtectedRoute + role-based dashboard redirect
+
+Phase 2 — Content backbone
+  6. Module + Lesson models and CRUD API (teacher/admin only)
+  7. Teacher LessonEditor UI (rich text + media upload)
+  8. Student ModuleList + LessonView UI (read-only consumption)
+
+Phase 3 — Core differentiator
+  9. Build 2-3 interactive canvas components (start with
+     ShapeDrawingDemo and ColorMixerDemo — highest visual payoff)
+  10. Wire interactiveConfig from Lesson data into canvas components
+
+Phase 4 — Assessment engine
+  11. Quiz + Question models and CRUD API
+  12. QuizEditor UI (teacher)
+  13. Attempt model + start/submit/grade logic (server-side grading)
+  14. QuizTaking + QuizResult UI (student)
+
+Phase 5 — Tracking & admin layer
+  15. Progress model + start/complete endpoints, wire into LessonView
+  16. Student Dashboard (progress bars, charts)
+  17. Teacher Dashboard (class roster + progress table)
+  18. Admin User Management + approval flow
+  19. Class model + join-by-code flow
+
+Phase 6 — Polish
+  20. Feedback + Notifications
+  21. Reports/analytics endpoints + admin charts
+  22. Responsive/mobile pass, accessibility pass
+  23. Testing (Jest/Supertest + manual test case table)
+  24. Deploy (Atlas + Render/Railway + Vercel), write README with
+      setup instructions and .env.example
+
+====================================================================
+11. ENVIRONMENT VARIABLES (.env.example for server/)
+====================================================================
+PORT=5000
+MONGO_URI=mongodb+srv://<user>:<pass>@cluster.mongodb.net/icgla
+JWT_SECRET=replace_with_long_random_string
+JWT_EXPIRES_IN=7d
+CLOUDINARY_CLOUD_NAME=
+CLOUDINARY_API_KEY=
+CLOUDINARY_API_SECRET=
+EMAIL_HOST=
+EMAIL_PORT=
+EMAIL_USER=
+EMAIL_PASS=
+CLIENT_URL=http://localhost:5173
+
+====================================================================
+12. SUGGESTED PROMPT TO GIVE AN AI CODING ASSISTANT (e.g. Claude Code)
+    Copy-paste one phase at a time rather than the whole thing at once.
+====================================================================
+"Using this blueprint [paste relevant section], scaffold the
+[server/client] for Phase [N]. Use the exact folder structure, model
+fields, and endpoint list given. Include input validation, error
+handling middleware, and role-based access control as specified.
+After scaffolding, list any assumptions you made so I can confirm
+them before moving to the next phase."
+
+====================================================================
+END OF BLUEPRINT
+====================================================================
