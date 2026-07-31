@@ -4,6 +4,5 @@
   "installCommand": "cd client && npm install",
   "buildCommand": "cd client && npm run build",
   "outputDirectory": "client/dist",
-  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }],
-  "cleanUrls": true
+  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
 }
