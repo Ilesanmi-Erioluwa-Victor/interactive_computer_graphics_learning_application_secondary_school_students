@@ -162,7 +162,7 @@ const forgotPassword = async (req, res, next) => {
     user.resetPasswordExpires = Date.now() + 60 * 60 * 1000;
     await user.save({ validateBeforeSave: false });
 
-    const resetUrl = `${process.env.CLIENT_URL}/reset-password/${resetToken}`;
+    const resetUrl = `${process.env.APP_URL || 'http://localhost:5173'}/reset-password/${resetToken}`;
     await sendEmail({
       to: user.email,
       subject: 'Reset your ICGLA password',
